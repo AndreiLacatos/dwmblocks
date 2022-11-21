@@ -21,6 +21,7 @@
 typedef struct {
 	char* icon;
 	char* command;
+	char* args;
 	unsigned int interval;
 	unsigned int signal;
 } Block;
@@ -47,30 +48,84 @@ static Window root;
 static void (*writestatus) () = pstdout;
 #endif
 
-
+#include "limits.h"
 #include "blocks.h"
+
+#define NETWORK_RX_BYTES_TOTAL "/sys/class/net/%s/statistics/rx_bytes"
+#define NETWORK_TX_BYTES_TOTAL "/sys/class/net/%s/statistics/tx_bytes"
 
 static char statusbar[LENGTH(blocks)][CMDLENGTH] = {0};
 static char statusstr[2][STATUSLENGTH];
 static int statusContinue = 1;
-static int returnStatus = 0;
+
+char* transfer_speed(int receive, const char* args, ...) {
+	char path[PATH_MAX];
+	// sprintf(path, NETWORK_RX_BYTES_TOTAL, args);
+	if (receive) {
+		sprintf(path, "/sys/class/net/%s/statistics/rx_bytes", args);
+	} else {
+		sprintf(path, "/sys/class/net/%s/statistics/tx_bytes", args);
+	}
+	
+	static long long rx_bytes_total;
+	static long long tx_bytes_total;
+
+	long long previous_bytes = receive > 0 ? rx_bytes_total : tx_bytes_total;
+
+	FILE* fp = fopen(path, "r");
+	if (receive) {
+		fscanf(fp, "%lld", &rx_bytes_total);
+	} else {
+		fscanf(fp, "%lld", &tx_bytes_total);
+	}
+	fclose(fp);
+	
+	double scaled = ((receive > 0 ? rx_bytes_total : tx_bytes_total) - previous_bytes) * 8;
+	size_t i;
+	
+	char* prefixes[] = { " bps", "Kbps", "Mbps", "Gbps", "Tbps", "Pbps" };
+	for(i = 0; i < 6 && scaled >= 1000; ++i)
+		scaled /= 1000;
+
+	char* out_buf = malloc(50 * sizeof(char));
+	sprintf(out_buf, "%5.1f%s", scaled, prefixes[i]);
+	return out_buf;
+}
+
+char* execute_builtin(const char* function_name, const char* args, ...) {
+	if (strcmp(function_name, "rx_speed") == 0) {
+		return transfer_speed(1, args);
+	} else if (strcmp(function_name, "tx_speed") == 0) {
+		return transfer_speed(0, args);
+	} 
+	return NULL;
+}
 
 //opens process *cmd and stores output in *output
 void getcmd(const Block *block, char *output)
 {
 	strcpy(output, block->icon);
+	int i = strlen(block->icon);
+
+	// check if command is a shell command or a built in function
+	char* res;
+	if((res = execute_builtin(block->command, block->args)) != NULL) {
+		strcpy(output+i, res);
+		// free(res);		
+		return;
+	} 
 	FILE *cmdf = popen(block->command, "r");
 	if (!cmdf)
 		return;
-	int i = strlen(block->icon);
+	// execute command
 	fgets(output+i, CMDLENGTH-i-delimLen, cmdf);
-	i = strlen(output);
+			i = strlen(output);
 	if (i == 0) {
-		//return if block and command output are both empty
+		// return if block and command output are both empty
 		pclose(cmdf);
 		return;
 	}
-	//only chop off newline if one is present at the end
+	// only chop off newline if one is present at the end
 	i = output[i-1] == '\n' ? i-1 : i;
 	if (delim[0] != '\0') {
 		strncpy(output+i, delim, delimLen); 
