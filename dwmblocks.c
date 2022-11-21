@@ -60,11 +60,10 @@ static int statusContinue = 1;
 
 char* transfer_speed(int receive, const char* args, ...) {
 	char path[PATH_MAX];
-	// sprintf(path, NETWORK_RX_BYTES_TOTAL, args);
 	if (receive) {
-		sprintf(path, "/sys/class/net/%s/statistics/rx_bytes", args);
+		sprintf(path, NETWORK_RX_BYTES_TOTAL, args);
 	} else {
-		sprintf(path, "/sys/class/net/%s/statistics/tx_bytes", args);
+		sprintf(path, NETWORK_TX_BYTES_TOTAL, args);
 	}
 	
 	static long long rx_bytes_total;
@@ -73,10 +72,20 @@ char* transfer_speed(int receive, const char* args, ...) {
 	long long previous_bytes = receive > 0 ? rx_bytes_total : tx_bytes_total;
 
 	FILE* fp = fopen(path, "r");
+	if(!fp) {
+		fprintf(stderr, "dwmblocks: Failed to open network statistics\n");
+		return 0;
+	}
 	if (receive) {
-		fscanf(fp, "%lld", &rx_bytes_total);
+		if(fscanf(fp, "%lld", &rx_bytes_total) <= 0) {
+			fprintf(stderr, "dwmblocks: Failed to read network statistics\n");
+			return 0;
+		}
 	} else {
-		fscanf(fp, "%lld", &tx_bytes_total);
+		if(fscanf(fp, "%lld", &tx_bytes_total)) {
+			fprintf(stderr, "dwmblocks: Failed to read network statistics\n");
+			return 0;
+		}
 	}
 	fclose(fp);
 	
@@ -84,8 +93,8 @@ char* transfer_speed(int receive, const char* args, ...) {
 	size_t i;
 	
 	char* prefixes[] = { " bps", "Kbps", "Mbps", "Gbps", "Tbps", "Pbps" };
-	for(i = 0; i < 6 && scaled >= 1000; ++i)
-		scaled /= 1000;
+	for(i = 0; i < 6 && scaled >= 1024; ++i)
+		scaled /= 1024;
 
 	char* out_buf = malloc(50 * sizeof(char));
 	sprintf(out_buf, "%5.1f%s", scaled, prefixes[i]);
