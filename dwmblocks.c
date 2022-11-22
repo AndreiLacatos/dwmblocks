@@ -51,9 +51,6 @@ static void (*writestatus) () = pstdout;
 #include "limits.h"
 #include "blocks.h"
 
-#define NETWORK_RX_BYTES_TOTAL "/sys/class/net/%s/statistics/rx_bytes"
-#define NETWORK_TX_BYTES_TOTAL "/sys/class/net/%s/statistics/tx_bytes"
-
 static char statusbar[LENGTH(blocks)][CMDLENGTH] = {0};
 static char statusstr[2][STATUSLENGTH];
 static int statusContinue = 1;
@@ -61,9 +58,9 @@ static int statusContinue = 1;
 char* transfer_speed(int receive, const char* args, ...) {
 	char path[PATH_MAX];
 	if (receive) {
-		sprintf(path, NETWORK_RX_BYTES_TOTAL, args);
+		sprintf(path, "/sys/class/net/%s/statistics/rx_bytes", args);
 	} else {
-		sprintf(path, NETWORK_TX_BYTES_TOTAL, args);
+		sprintf(path, "/sys/class/net/%s/statistics/tx_bytes", args);
 	}
 	
 	static long long rx_bytes_total;
@@ -74,17 +71,17 @@ char* transfer_speed(int receive, const char* args, ...) {
 	FILE* fp = fopen(path, "r");
 	if(!fp) {
 		fprintf(stderr, "dwmblocks: Failed to open network statistics\n");
-		return 0;
+		return " N/A ";
 	}
 	if (receive) {
 		if(fscanf(fp, "%lld", &rx_bytes_total) <= 0) {
 			fprintf(stderr, "dwmblocks: Failed to read network statistics\n");
-			return 0;
+			return " N/A ";
 		}
 	} else {
-		if(fscanf(fp, "%lld", &tx_bytes_total)) {
+		if(fscanf(fp, "%lld", &tx_bytes_total) <= 0) {
 			fprintf(stderr, "dwmblocks: Failed to read network statistics\n");
-			return 0;
+			return " N/A ";
 		}
 	}
 	fclose(fp);
